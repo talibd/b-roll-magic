@@ -6,8 +6,6 @@ import { SubtitleTimeline, SubtitleSegment } from './SubtitleTimeline';
 import { toast } from '@/hooks/use-toast';
 import OpenAI from 'openai';
 
-// Unsplash API configuration
-const UNSPLASH_ACCESS_KEY = 'cJwjnrON8PlOGXaqV6jvgOF6aTytyNR_2MDbxHkxifw'; // Public demo key
 
 type ProcessingState = 'idle' | 'uploading' | 'extracting' | 'generating' | 'complete';
 
@@ -16,6 +14,7 @@ export const BrollMagic: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [segments, setSegments] = useState<SubtitleSegment[]>([]);
   const [apiKey, setApiKey] = useState<string>('');
+  const [unsplashKey, setUnsplashKey] = useState<string>('');
 
   const mockSubtitleData: Omit<SubtitleSegment, 'id' | 'brollImage'>[] = [
     {
@@ -58,12 +57,16 @@ export const BrollMagic: React.FC = () => {
 
   // Function to fetch image from Unsplash
   const fetchUnsplashImage = async (keyword: string): Promise<string> => {
+    if (!unsplashKey) {
+      return `https://source.unsplash.com/800x600/?${keyword}`;
+    }
+    
     try {
       const response = await fetch(
         `https://api.unsplash.com/search/photos?query=${encodeURIComponent(keyword)}&per_page=1&orientation=landscape`,
         {
           headers: {
-            'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}`
+            'Authorization': `Client-ID ${unsplashKey}`
           }
         }
       );
@@ -240,26 +243,51 @@ export const BrollMagic: React.FC = () => {
         <div className="max-w-4xl mx-auto space-y-8">
           
           {/* API Key Input */}
-          {!apiKey && (
+          {(!apiKey || !unsplashKey) && (
             <div className="bg-card border border-border rounded-lg p-6 shadow-elegant">
-              <h3 className="font-semibold mb-4">OpenAI API Configuration</h3>
+              <h3 className="font-semibold mb-4">API Configuration</h3>
               <div className="space-y-4">
-                <div>
-                  <label htmlFor="apiKey" className="block text-sm font-medium mb-2">
-                    OpenAI API Key
-                  </label>
-                  <input
-                    type="password"
-                    id="apiKey"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="sk-..."
-                    className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Your API key is stored locally and never sent to our servers.
-                  </p>
-                </div>
+                {!apiKey && (
+                  <div>
+                    <label htmlFor="apiKey" className="block text-sm font-medium mb-2">
+                      OpenAI API Key
+                    </label>
+                    <input
+                      type="password"
+                      id="apiKey"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="sk-..."
+                      className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Required for video transcription using OpenAI Whisper.
+                    </p>
+                  </div>
+                )}
+                
+                {!unsplashKey && (
+                  <div>
+                    <label htmlFor="unsplashKey" className="block text-sm font-medium mb-2">
+                      Unsplash API Key
+                    </label>
+                    <input
+                      type="password"
+                      id="unsplashKey"
+                      value={unsplashKey}
+                      onChange={(e) => setUnsplashKey(e.target.value)}
+                      placeholder="Enter your Unsplash Access Key"
+                      className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Required for fetching high-quality B-roll images from Unsplash.
+                    </p>
+                  </div>
+                )}
+                
+                <p className="text-xs text-muted-foreground">
+                  Your API keys are stored locally and never sent to our servers.
+                </p>
               </div>
             </div>
           )}
