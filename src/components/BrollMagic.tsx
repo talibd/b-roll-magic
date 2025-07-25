@@ -6,11 +6,8 @@ import { SubtitleTimeline, SubtitleSegment } from './SubtitleTimeline';
 import { toast } from '@/hooks/use-toast';
 import OpenAI from 'openai';
 
-// Import B-roll images
-import brollCoding from '@/assets/broll-coding.jpg';
-import brollCity from '@/assets/broll-city.jpg';
-import brollMeeting from '@/assets/broll-meeting.jpg';
-import brollCoffee from '@/assets/broll-coffee.jpg';
+// Unsplash API configuration
+const UNSPLASH_ACCESS_KEY = 'cJwjnrON8PlOGXaqV6jvgOF6aTytyNR_2MDbxHkxifw'; // Public demo key
 
 type ProcessingState = 'idle' | 'uploading' | 'extracting' | 'generating' | 'complete';
 
@@ -59,7 +56,24 @@ export const BrollMagic: React.FC = () => {
     }
   ];
 
-  const brollImages = [brollCoding, brollMeeting, brollCoding, brollMeeting, brollCoffee, brollCity];
+  // Function to fetch image from Unsplash
+  const fetchUnsplashImage = async (keyword: string): Promise<string> => {
+    try {
+      const response = await fetch(
+        `https://api.unsplash.com/search/photos?query=${encodeURIComponent(keyword)}&per_page=1&orientation=landscape`,
+        {
+          headers: {
+            'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}`
+          }
+        }
+      );
+      const data = await response.json();
+      return data.results?.[0]?.urls?.regular || `https://source.unsplash.com/800x600/?${keyword}`;
+    } catch (error) {
+      console.error('Error fetching Unsplash image:', error);
+      return `https://source.unsplash.com/800x600/?${keyword}`;
+    }
+  };
 
   const processVideo = async (file: File) => {
     if (!apiKey) {
@@ -102,22 +116,28 @@ export const BrollMagic: React.FC = () => {
 
       // Process transcription segments
       const transcriptSegments = transcription.segments || [];
-      const processedSegments: SubtitleSegment[] = transcriptSegments.map((segment, index) => {
-        // Extract keywords from segment text
-        const words = segment.text.toLowerCase().split(/\s+/);
-        const keywords = words
-          .filter(word => word.length > 4 && !['the', 'and', 'that', 'with', 'have', 'this', 'will', 'your', 'from', 'they', 'know', 'want', 'been', 'good', 'much', 'some', 'time'].includes(word))
-          .slice(0, 3);
+      const processedSegments: SubtitleSegment[] = await Promise.all(
+        transcriptSegments.map(async (segment, index) => {
+          // Extract keywords from segment text
+          const words = segment.text.toLowerCase().split(/\s+/);
+          const keywords = words
+            .filter(word => word.length > 4 && !['the', 'and', 'that', 'with', 'have', 'this', 'will', 'your', 'from', 'they', 'know', 'want', 'been', 'good', 'much', 'some', 'time'].includes(word))
+            .slice(0, 3);
 
-        return {
-          id: `segment-${index}`,
-          startTime: segment.start,
-          endTime: segment.end,
-          text: segment.text.trim(),
-          keywords: keywords,
-          brollImage: brollImages[index % brollImages.length]
-        };
-      });
+          // Fetch B-roll image based on the first keyword or fallback to general terms
+          const searchTerm = keywords[0] || segment.text.split(' ').find(word => word.length > 3) || 'technology';
+          const brollImage = await fetchUnsplashImage(searchTerm);
+
+          return {
+            id: `segment-${index}`,
+            startTime: segment.start,
+            endTime: segment.end,
+            text: segment.text.trim(),
+            keywords: keywords,
+            brollImage: brollImage
+          };
+        })
+      );
 
       setSegments(processedSegments);
       setProgress(100);
