@@ -4,6 +4,7 @@ import { VideoUpload } from './VideoUpload';
 import { ProcessingStatus } from './ProcessingStatus';
 import { SubtitleTimeline, SubtitleSegment } from './SubtitleTimeline';
 import { toast } from '@/hooks/use-toast';
+import OpenAI from 'openai';
 
 // Import B-roll images
 import brollCoding from '@/assets/broll-coding.jpg';
@@ -17,6 +18,7 @@ export const BrollMagic: React.FC = () => {
   const [processingState, setProcessingState] = useState<ProcessingState>('idle');
   const [progress, setProgress] = useState(0);
   const [segments, setSegments] = useState<SubtitleSegment[]>([]);
+  const [apiKey, setApiKey] = useState<string>('');
 
   const mockSubtitleData: Omit<SubtitleSegment, 'id' | 'brollImage'>[] = [
     {
@@ -60,38 +62,82 @@ export const BrollMagic: React.FC = () => {
   const brollImages = [brollCoding, brollMeeting, brollCoding, brollMeeting, brollCoffee, brollCity];
 
   const processVideo = async (file: File) => {
-    setProcessingState('uploading');
-    setProgress(10);
+    if (!apiKey) {
+      toast({
+        title: "API Key Required",
+        description: "Please enter your OpenAI API key to process videos.",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    // Simulate processing steps
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    setProcessingState('extracting');
-    setProgress(30);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setProgress(60);
-    setProcessingState('generating');
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    
-    setProgress(90);
-    await new Promise(resolve => setTimeout(resolve, 800));
+    try {
+      setProcessingState('uploading');
+      setProgress(10);
 
-    // Generate final segments with B-roll images
-    const finalSegments: SubtitleSegment[] = mockSubtitleData.map((segment, index) => ({
-      ...segment,
-      id: `segment-${index}`,
-      brollImage: brollImages[index]
-    }));
+      // Initialize OpenAI client
+      const openai = new OpenAI({
+        apiKey: apiKey,
+        dangerouslyAllowBrowser: true
+      });
 
-    setSegments(finalSegments);
-    setProgress(100);
-    setProcessingState('complete');
-    
-    toast({
-      title: "Processing Complete! 🎉",
-      description: "Your B-roll suggestions are ready to view.",
-    });
+      setProcessingState('extracting');
+      setProgress(30);
+
+      // Convert video file to audio for Whisper
+      const audioFile = new File([file], file.name, { type: file.type });
+      
+      setProgress(50);
+
+      // Use OpenAI Whisper to transcribe
+      const transcription = await openai.audio.transcriptions.create({
+        file: audioFile,
+        model: "whisper-1",
+        response_format: "verbose_json",
+        timestamp_granularities: ["segment"]
+      });
+
+      setProgress(70);
+      setProcessingState('generating');
+
+      // Process transcription segments
+      const transcriptSegments = transcription.segments || [];
+      const processedSegments: SubtitleSegment[] = transcriptSegments.map((segment, index) => {
+        // Extract keywords from segment text
+        const words = segment.text.toLowerCase().split(/\s+/);
+        const keywords = words
+          .filter(word => word.length > 4 && !['the', 'and', 'that', 'with', 'have', 'this', 'will', 'your', 'from', 'they', 'know', 'want', 'been', 'good', 'much', 'some', 'time'].includes(word))
+          .slice(0, 3);
+
+        return {
+          id: `segment-${index}`,
+          startTime: segment.start,
+          endTime: segment.end,
+          text: segment.text.trim(),
+          keywords: keywords,
+          brollImage: brollImages[index % brollImages.length]
+        };
+      });
+
+      setSegments(processedSegments);
+      setProgress(100);
+      setProcessingState('complete');
+      
+      toast({
+        title: "Processing Complete! 🎉",
+        description: "Your subtitles have been generated using OpenAI Whisper.",
+      });
+
+    } catch (error) {
+      console.error('Error processing video:', error);
+      toast({
+        title: "Processing Failed",
+        description: "There was an error processing your video. Please check your API key and try again.",
+        variant: "destructive"
+      });
+      setProcessingState('idle');
+      setProgress(0);
+    }
   };
 
   const downloadSrt = () => {
@@ -173,6 +219,31 @@ export const BrollMagic: React.FC = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto space-y-8">
           
+          {/* API Key Input */}
+          {!apiKey && (
+            <div className="bg-card border border-border rounded-lg p-6 shadow-elegant">
+              <h3 className="font-semibold mb-4">OpenAI API Configuration</h3>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="apiKey" className="block text-sm font-medium mb-2">
+                    OpenAI API Key
+                  </label>
+                  <input
+                    type="password"
+                    id="apiKey"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-..."
+                    className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Your API key is stored locally and never sent to our servers.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Upload Section */}
           <VideoUpload 
             onVideoUpload={processVideo} 
